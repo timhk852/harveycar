@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+  />
+  <title>Gear Shift App</title>
+  <style>
+    :root {
+      --bg: #000;
+      --box: #111;
+      --border: #333;
+      --text: #fff;
+      --active: #19c75a;
+      --active-text: #000;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      overflow: hidden;
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .app {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      max-width: 320px; /* close to iPhone 5 width */
+      max-height: 568px; /* close to iPhone 5 height */
+      background: #000;
+      overflow: hidden;
+    }
+
+    .gear-panel {
+      position: absolute;
+      top: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+      z-index: 2;
+    }
+
+    .gear-btn {
+      width: 64px;
+      height: 64px;
+      border: 2px solid var(--border);
+      background: var(--box);
+      color: var(--text);
+      font-size: 28px;
+      font-weight: 700;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      touch-action: manipulation;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+    }
+
+    .gear-btn:active {
+      transform: scale(0.97);
+    }
+
+    .gear-btn.active {
+      background: var(--active);
+      color: var(--active-text);
+      border-color: var(--active);
+    }
+
+    .camera-wrap {
+      position: absolute;
+      left: 10px;
+      bottom: 10px;
+      width: 120px;
+      height: 160px;
+      border: 2px solid #2a2a2a;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #111;
+      z-index: 1;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1); /* mirrored front cam preview */
+      background: #111;
+    }
+
+    .camera-label {
+      position: absolute;
+      top: 4px;
+      left: 6px;
+      font-size: 10px;
+      color: #ddd;
+      background: rgba(0,0,0,0.5);
+      padding: 2px 5px;
+      border-radius: 4px;
+      z-index: 2;
+    }
+
+    .status {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      width: 150px;
+      color: #aaa;
+      font-size: 11px;
+      line-height: 1.3;
+      text-align: right;
+    }
+
+    @media (max-height: 568px) {
+      .gear-panel {
+        top: 20px;
+        gap: 8px;
+      }
+
+      .gear-btn {
+        width: 56px;
+        height: 56px;
+        font-size: 24px;
+      }
+
+      .camera-wrap {
+        width: 110px;
+        height: 145px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="gear-panel" id="gearPanel">
+      <button class="gear-btn active" data-gear="P">P</button>
+      <button class="gear-btn" data-gear="R">R</button>
+      <button class="gear-btn" data-gear="N">N</button>
+      <button class="gear-btn" data-gear="2">2</button>
+      <button class="gear-btn" data-gear="L">L</button>
+    </div>
+
+    <div class="camera-wrap">
+      <div class="camera-label">Front Camera</div>
+      <video id="camera" autoplay playsinline muted></video>
+    </div>
+
+    <div class="status" id="status">Tap a gear to enable audio/camera if needed.</div>
+  </div>
+
+  <script>
+    const buttons = document.querySelectorAll('.gear-btn');
+    const statusEl = document.getElementById('status');
+    const video = document.getElementById('camera');
+
+    let audioCtx = null;
+    let reverseInterval = null;
+    let mediaStream = null;
+    let unlocked = false;
+
+    function setActiveGear(gear) {
+      buttons.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.gear === gear);
+      });
+
+      if (gear === 'R') {
+        startReverseBeep();
+      } else {
+        stopReverseBeep();
+      }
+
+      statusEl.textContent = `Selected: ${gear}`;
+    }
+
+    function ensureAudioContext() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    function beepOnce() {
+      if (!audioCtx) return;
+
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(1000, audioCtx.currentTime);
+
+      gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.08, audioCtx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.22);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.22);
+    }
+
+    function startReverseBeep() {
+      ensureAudioContext();
+      stopReverseBeep();
+      beepOnce();
+      reverseInterval = setInterval(beepOnce, 700);
+    }
+
+    function stopReverseBeep() {
+      if (reverseInterval) {
+        clearInterval(reverseInterval);
+        reverseInterval = null;
+      }
+    }
+
+    async function startFrontCamera() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        statusEl.textContent = 'Camera not supported on this device/browser.';
+        return;
+      }
+
+      if (mediaStream) return;
+
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'user',
+            width: { ideal: 320 },
+            height: { ideal: 240 }
+          },
+          audio: false
+        });
+
+        video.srcObject = mediaStream;
+        statusEl.textContent = 'Camera ready';
+      } catch (err) {
+        statusEl.textContent = 'Camera access denied/unavailable.';
+        console.error(err);
+      }
+    }
+
+    async function unlockFeatures() {
+      if (unlocked) return;
+      unlocked = true;
+      ensureAudioContext();
+      await startFrontCamera();
+    }
+
+    buttons.forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await unlockFeatures();
+        const gear = btn.dataset.gear;
+        setActiveGear(gear);
+      });
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        stopReverseBeep();
+      } else {
+        const active = document.querySelector('.gear-btn.active');
+        if (active && active.dataset.gear === 'R') {
+          startReverseBeep();
+        }
+      }
+    });
+  </script>
+</body>
+</html>

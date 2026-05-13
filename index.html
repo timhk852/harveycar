@@ -76,24 +76,24 @@
 
     .gear-panel {
       position: absolute;
-      top: 110px;
+      top: 90px;
       left: 50%;
       transform: translateX(-50%);
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 8px;
       align-items: center;
       z-index: 2;
     }
 
     .gear-btn {
-      width: 62px;
-      height: 62px;
+      width: 58px;
+      height: 58px;
       border-radius: 8px;
       border: 2px solid var(--border);
       background: var(--box);
       color: var(--text);
-      font-size: 28px;
+      font-size: 26px;
       font-weight: 700;
       display: flex;
       align-items: center;
@@ -162,7 +162,7 @@
 <body>
   <div class="app">
     <div class="unlock" id="unlockBox">
-      Tap once to enable sound and front camera
+      Tap once to enable sound and camera
       <button id="startBtn">Start</button>
     </div>
 
@@ -195,6 +195,7 @@
     let beepTimer = null;
     let stream = null;
     let started = false;
+    let currentGear = 'P';
 
     function updateStatus(msg) {
       statusEl.textContent = msg;
@@ -299,20 +300,39 @@
       }
     }
 
+    function stopCamera() {
+      if (video.srcObject) {
+        const tracks = video.srcObject.getTracks();
+        tracks.forEach(track => track.stop());
+        video.srcObject = null;
+      }
+
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+      }
+
+      cameraBox.classList.remove('show');
+    }
+
     function showCamera(show) {
       cameraBox.classList.toggle('show', show);
     }
 
-    async function handleReverseCamera(gear) {
+    async function updateCameraForGear(gear) {
       if (gear === 'R') {
         const ok = await startCamera();
-        if (ok) showCamera(true);
+        if (ok) {
+          showCamera(true);
+        }
       } else {
-        showCamera(false);
+        stopCamera();
       }
     }
 
     async function setGear(gear) {
+      currentGear = gear;
+
       gearButtons.forEach(btn => {
         btn.classList.toggle('active', btn.dataset.gear === gear);
       });
@@ -323,7 +343,7 @@
         stopReverseBeep();
       }
 
-      await handleReverseCamera(gear);
+      await updateCameraForGear(gear);
       updateStatus('Selected gear: ' + gear);
     }
 
@@ -350,16 +370,17 @@
     document.addEventListener('visibilitychange', async () => {
       if (document.hidden) {
         stopReverseBeep();
+        stopCamera();
       } else {
         if (audioCtx && audioCtx.state === 'suspended') {
-          try { await audioCtx.resume(); } catch (e) {}
+          try {
+            await audioCtx.resume();
+          } catch (e) {}
         }
-        const active = document.querySelector('.gear-btn.active');
-        if (active && active.dataset.gear === 'R') {
+
+        if (currentGear === 'R') {
           startReverseBeep();
-          showCamera(true);
-        } else {
-          showCamera(false);
+          await updateCameraForGear('R');
         }
       }
     });
